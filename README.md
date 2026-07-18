@@ -1,9 +1,11 @@
-# SigLIP ONNX Server
+# SigLIP 2 ONNX Server
 
-A CPU-only, text-only SigLIP embedding server built with Rust and ONNX Runtime.
-It is intended for live text queries when GPU capacity is scarce; image
+A CPU-only, text-only SigLIP 2 embedding server built with Rust and ONNX
+Runtime. It is intended for live text queries when GPU capacity is scarce; image
 embedding and index ingestion remain GPU workloads.
 
+It exposes an OpenAI-compatible embeddings endpoint, so existing clients that
+support a custom OpenAI base URL can use it without a SigLIP 2-specific wrapper.
 The HTTP surface is deliberately small:
 
 - `GET /health`
@@ -11,7 +13,68 @@ The HTTP surface is deliberately small:
 
 There are no image or legacy embedding routes.
 
-## API
+## Why this exists
+
+SigLIP 2 places images and text in the same embedding space. Building a video
+or image index is a throughput-heavy batch workload: decode the media, run the
+image tower on GPUs, and persist those vectors in a vector index. Searching
+the finished index is different. Each request only needs one small text
+embedding before nearest-neighbor search, so reserving a GPU for that query
+path is often unnecessary.
+
+```text
+Offline indexing:  images/video ──> GPU SigLIP 2 image tower ──> vector index
+Online search:     text query   ──> CPU SigLIP 2 text tower  ──> search that index
+```
+
+This server owns the second path. It lets a system keep GPU ingestion for high
+throughput while moving live text queries onto ordinary CPU instances, which
+are generally easier to provision, scale, and keep available when GPU capacity
+is constrained. It is especially useful as a capacity fallback or as the
+steady-state query service after GPU indexing completes.
+
+The CPU and GPU paths must use the same SigLIP 2 checkpoint contract: model
+revision, tokenizer, maximum token length, projection dimension, and
+normalization. A text vector from a different contract is not compatible with
+the existing image index. Original SigLIP and SigLIP 2 checkpoints are not
+interchangeable embedding spaces.
+
+## OpenAI-compatible usage
+
+Point the client at this server's `/v1` base URL and request the exact model ID
+reported by `GET /health`:
+
+```bash
+curl --fail --silent --show-error http://127.0.0.1:8000/v1/embeddings \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "model": "organization/siglip-model",
+    "input": ["a red block", "a robot arm"]
+  }'
+```
+
+For example, with the OpenAI Python client:
+
+```python
+from openai import OpenAI
+
+embedding_client = OpenAI(
+    base_url="http://127.0.0.1:8000/v1",
+    api_key="not-used",
+)
+response = embedding_client.embeddings.create(
+    model="organization/siglip-model",
+    input=["a red block", "a robot arm"],
+)
+embeddings = [item.embedding for item in response.data]
+```
+
+The server does not validate `Authorization`; `api_key="not-used"` only
+satisfies clients that require a value. Protect non-loopback deployments with
+network controls. This is embeddings-endpoint compatibility, not an
+implementation of the rest of the OpenAI API.
+
+### Request contract
 
 `POST /v1/embeddings` accepts a single string, a string batch, one token-ID
 sequence, or a batch of token-ID sequences. The optional `model` must match the
@@ -93,6 +156,39 @@ docker run --rm --env-file .env \
 
 Copy [`.env.example`](.env.example) to `.env` and adjust its mounted paths.
 
+## Production C4 deployment
+
+The checked-in [Compose deployment](deploy/compose.yaml) replaces ad-hoc
+`docker run` processes. It uses durable host paths, read-only mounts and root
+filesystem, bounded concurrency, a startup-aware health check, and
+`restart: unless-stopped` so the service returns after Docker or the VM
+restarts.
+
+On the C4 host, install the model and runtime assets outside `/tmp`, then start
+the service from a checkout of this repository:
+
+```bash
+sudo install -d -m 0755 \
+  /var/lib/siglip-onnx/model \
+  /var/lib/siglip-onnx/onnxruntime/lib
+cp .env.example .env
+# Set SIGLIP_ONNX_IMAGE to the published immutable image and verify the paths.
+sudo docker compose --env-file .env -f deploy/compose.yaml pull
+sudo docker compose --env-file .env -f deploy/compose.yaml up -d
+sudo docker compose --env-file .env -f deploy/compose.yaml ps
+```
+
+The default example listens on the VM's VPC interface so Cloud Run Direct VPC
+egress can reach it. Restrict TCP port 8000 with the VPC firewall; the server
+does not provide application-layer authentication. Bind
+`SIGLIP_LISTEN_ADDRESS=127.0.0.1` for local-only testing.
+
+Before changing query traffic, verify `/health` reports the exact model,
+revision, and dimension expected by the GPU-built indexes. Then deploy serve
+with the C4's internal URL and `SQUASH_SIGLIP_TEXT_PROTOCOL=openai`. Rollback is
+the legacy GPU URL plus `SQUASH_SIGLIP_TEXT_PROTOCOL=legacy`; ingestion is not
+part of this switch.
+
 ## CPU concurrency
 
 The process owns a bounded pool of independent ONNX Runtime sessions. Requests
@@ -131,4 +227,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local quality checks.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [MIT License](LICENSE).

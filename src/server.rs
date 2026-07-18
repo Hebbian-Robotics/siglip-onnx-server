@@ -1,4 +1,4 @@
-//! HTTP contract and ONNX Runtime adapter for text-only `SigLIP` embedding.
+//! HTTP contract and ONNX Runtime adapter for text-only `SigLIP 2` embedding.
 
 use std::mem::size_of;
 use std::sync::{Arc, Condvar, Mutex};
@@ -153,7 +153,7 @@ impl OnnxTextEmbedder {
     /// # Errors
     ///
     /// Returns an error when the native runtime, tokenizer, or ONNX graph
-    /// cannot be loaded, or when the artifact contract does not match `SigLIP`.
+    /// cannot be loaded, or when the artifact contract does not match `SigLIP 2`.
     pub fn load(config: ServiceConfig) -> Result<Self> {
         info!("initializing ONNX Runtime");
         let onnx_runtime_environment =
@@ -162,13 +162,13 @@ impl OnnxTextEmbedder {
             })?;
         ensure!(
             onnx_runtime_environment.commit(),
-            "ONNX Runtime was already initialized before the SigLIP service loaded its configured library"
+            "ONNX Runtime was already initialized before the SigLIP 2 service loaded its configured library"
         );
 
-        info!("loading pinned SigLIP tokenizer");
+        info!("loading pinned SigLIP 2 tokenizer");
         let mut tokenizer = Tokenizer::from_file(config.tokenizer_path()).map_err(|error| {
             anyhow::anyhow!(
-                "loading SigLIP tokenizer from {}: {error}",
+                "loading SigLIP 2 tokenizer from {}: {error}",
                 config.tokenizer_path().display(),
             )
         })?;
@@ -182,7 +182,7 @@ impl OnnxTextEmbedder {
                 session_number = session_index + 1,
                 session_count = config.session_count(),
                 intra_operation_threads = config.intra_operation_threads(),
-                "creating SigLIP ONNX text session"
+                "creating SigLIP 2 ONNX text session"
             );
             let session = load_onnx_session(&config, &shared_prepacked_weights)?;
             if session_index == 0 {
@@ -191,7 +191,7 @@ impl OnnxTextEmbedder {
             sessions.push(session);
         }
 
-        info!("running SigLIP ONNX startup probe");
+        info!("running SigLIP 2 ONNX startup probe");
         let admission_controller = InferenceAdmissionController::new(
             config.session_count(),
             config.maximum_pending_requests(),
@@ -296,7 +296,7 @@ impl OnnxTextEmbedder {
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor,
             })
-            .map_err(|error| anyhow::anyhow!("running SigLIP text ONNX graph: {error}"))?;
+            .map_err(|error| anyhow::anyhow!("running SigLIP 2 text ONNX graph: {error}"))?;
         let embedding_output = outputs.get(self.config.output_name()).with_context(|| {
             format!(
                 "ONNX graph did not return configured output {:?}",
@@ -338,7 +338,7 @@ fn load_onnx_session(
         .commit_from_file(config.model_path())
         .map_err(|error| {
             anyhow::anyhow!(
-                "loading SigLIP text ONNX graph from {}: {error}",
+                "loading SigLIP 2 text ONNX graph from {}: {error}",
                 config.model_path().display()
             )
         })
@@ -347,7 +347,7 @@ fn load_onnx_session(
 fn configure_fixed_length_tokenizer(tokenizer: &mut Tokenizer, token_length: usize) -> Result<u32> {
     let pad_token = "<pad>";
     let pad_token_id = tokenizer.token_to_id(pad_token).with_context(|| {
-        format!("SigLIP tokenizer does not define required pad token {pad_token:?}")
+        format!("SigLIP 2 tokenizer does not define required pad token {pad_token:?}")
     })?;
     tokenizer
         .with_truncation(Some(TruncationParams {
@@ -357,7 +357,7 @@ fn configure_fixed_length_tokenizer(tokenizer: &mut Tokenizer, token_length: usi
             stride: 0,
         }))
         .map_err(|error| {
-            anyhow::anyhow!("configuring fixed SigLIP tokenizer truncation: {error}")
+            anyhow::anyhow!("configuring fixed SigLIP 2 tokenizer truncation: {error}")
         })?;
     tokenizer.with_padding(Some(PaddingParams {
         strategy: PaddingStrategy::Fixed(token_length),
@@ -379,7 +379,7 @@ fn validate_graph_contract(session: &Session, config: &ServiceConfig) -> Result<
     for required_input_name in ["input_ids", "attention_mask"] {
         ensure!(
             input_names.contains(&required_input_name),
-            "SigLIP text ONNX graph is missing required input {required_input_name:?}; found {input_names:?}"
+            "SigLIP 2 text ONNX graph is missing required input {required_input_name:?}; found {input_names:?}"
         );
     }
 
@@ -390,7 +390,7 @@ fn validate_graph_contract(session: &Session, config: &ServiceConfig) -> Result<
         .collect();
     ensure!(
         output_names.contains(&config.output_name()),
-        "SigLIP text ONNX graph is missing configured output {:?}; found {output_names:?}",
+        "SigLIP 2 text ONNX graph is missing configured output {:?}; found {output_names:?}",
         config.output_name()
     );
     Ok(())
@@ -428,7 +428,7 @@ fn flatten_encoding_values(
         let values = select_values(encoding);
         ensure!(
             values.len() == token_length,
-            "SigLIP tokenizer produced {} {label} for input {encoding_index}, expected {token_length}",
+            "SigLIP 2 tokenizer produced {} {label} for input {encoding_index}, expected {token_length}",
             values.len()
         );
         flattened_values.extend(values.iter().map(|value| i64::from(*value)));
@@ -670,7 +670,7 @@ enum TextEmbeddingRequestRejection {
 
 #[derive(Debug, Error)]
 enum TextEmbeddingExecutionError {
-    #[error("SigLIP text inference capacity is saturated; retry later")]
+    #[error("SigLIP 2 text inference capacity is saturated; retry later")]
     Saturated,
     #[error(transparent)]
     Rejected(#[from] TextEmbeddingRequestRejection),
@@ -930,15 +930,15 @@ impl IntoResponse for OpenAiEmbeddingHttpError {
             }
             OpenAiEmbeddingHttpErrorKind::Overloaded => (
                 StatusCode::TOO_MANY_REQUESTS,
-                "SigLIP text inference capacity is saturated; retry later".to_owned(),
+                "SigLIP 2 text inference capacity is saturated; retry later".to_owned(),
                 "overloaded",
                 Some("1"),
             ),
             OpenAiEmbeddingHttpErrorKind::Backend(error) => {
-                tracing::error!(error = %error, "SigLIP ONNX inference failed");
+                tracing::error!(error = %error, "SigLIP 2 ONNX inference failed");
                 (
                     StatusCode::FAILED_DEPENDENCY,
-                    "SigLIP text inference failed".to_owned(),
+                    "SigLIP 2 text inference failed".to_owned(),
                     "backend",
                     None,
                 )
@@ -1125,7 +1125,7 @@ mod tests {
 
         let rejection = request
             .into_validated_request("google/siglip2-so400m-patch16-384", 1152, 32)
-            .expect_err("SigLIP does not support output-dimension projection");
+            .expect_err("SigLIP 2 does not support output-dimension projection");
 
         assert!(matches!(
             rejection,

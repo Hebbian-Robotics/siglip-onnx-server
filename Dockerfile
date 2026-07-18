@@ -16,7 +16,9 @@ RUN --mount=type=cache,id=siglip-onnx-cargo-registry,target=/usr/local/cargo/reg
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates=20230311* \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates=20230311* \
+        curl=7.88.* \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home siglip
 
@@ -27,4 +29,6 @@ COPY --from=builder /src/target/release/siglip-onnx-server /app/siglip-onnx-serv
 # and libonnxruntime. Startup fails if any configured artifact is absent.
 USER siglip
 EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=3s --start-period=120s --retries=3 \
+    CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8000/health"]
 ENTRYPOINT ["/app/siglip-onnx-server"]

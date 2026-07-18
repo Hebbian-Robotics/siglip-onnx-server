@@ -1,0 +1,48 @@
+name: siglip-onnx
+
+services:
+  server:
+    image: ${SIGLIP_ONNX_IMAGE:?set SIGLIP_ONNX_IMAGE to an immutable image reference}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SIGLIP_LISTEN_ADDRESS:-0.0.0.0}:${SIGLIP_HOST_PORT:-8000}:8000"
+    environment:
+      SIGLIP_MODEL_MANIFEST_PATH: /models/manifest.json
+      SIGLIP_ONNX_MODEL_PATH: /models/text_model.onnx
+      SIGLIP_TOKENIZER_PATH: /models/tokenizer.json
+      SIGLIP_ORT_LIBRARY_PATH: /opt/onnxruntime/lib/libonnxruntime.so
+      SIGLIP_ONNX_OUTPUT_NAME: ${SIGLIP_ONNX_OUTPUT_NAME:-text_embeds}
+      SIGLIP_PORT: "8000"
+      SIGLIP_ORT_SESSION_COUNT: ${SIGLIP_ORT_SESSION_COUNT:-1}
+      SIGLIP_ORT_INTRA_OP_THREADS: ${SIGLIP_ORT_INTRA_OP_THREADS:-1}
+      SIGLIP_MAX_TEXT_BATCH_SIZE: ${SIGLIP_MAX_TEXT_BATCH_SIZE:-32}
+      SIGLIP_MAX_PENDING_TEXT_REQUESTS: ${SIGLIP_MAX_PENDING_TEXT_REQUESTS:-32}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - type: bind
+        source: ${SIGLIP_ARTIFACT_DIRECTORY:?set SIGLIP_ARTIFACT_DIRECTORY to the durable model directory}
+        target: /models
+        read_only: true
+      - type: bind
+        source: ${SIGLIP_ORT_LIBRARY_DIRECTORY:?set SIGLIP_ORT_LIBRARY_DIRECTORY to the ONNX Runtime library directory}
+        target: /opt/onnxruntime/lib
+        read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - http://127.0.0.1:8000/health
+      interval: 10s
+      timeout: 3s
+      start_period: 120s
+      retries: 3
+    stop_grace_period: 30s
