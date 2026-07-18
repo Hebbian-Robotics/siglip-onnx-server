@@ -1,0 +1,40 @@
+name: Publish container
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-container-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CONTAINER_IMAGE: ghcr.io/hebbian-robotics/siglip-onnx-server
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image
+        run: |
+          docker build \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "${CONTAINER_IMAGE}:${GITHUB_SHA}" \
+            --tag "${CONTAINER_IMAGE}:latest" \
+            .
+      - name: Push immutable image
+        run: docker push "${CONTAINER_IMAGE}:${GITHUB_SHA}"
+      - name: Push latest image
+        run: docker push "${CONTAINER_IMAGE}:latest"

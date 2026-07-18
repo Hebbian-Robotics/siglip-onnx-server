@@ -15,6 +15,10 @@ RUN --mount=type=cache,id=siglip-onnx-cargo-registry,target=/usr/local/cargo/reg
 
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.source="https://github.com/Hebbian-Robotics/siglip-onnx-server" \
+      org.opencontainers.image.description="CPU-only SigLIP 2 text embeddings with Rust and ONNX Runtime" \
+      org.opencontainers.image.licenses="MIT"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates=20230311* \
