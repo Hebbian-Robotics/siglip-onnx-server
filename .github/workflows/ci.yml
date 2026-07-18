@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+          components: clippy,rustfmt
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install --yes mold
+      - name: Install dependency auditor
+        run: cargo install cargo-machete --version 0.9.2 --locked
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --all-features -- --deny warnings
+      - run: cargo test --all-features
+      - run: cargo machete --with-metadata --skip-target-dir
