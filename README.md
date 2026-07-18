@@ -23,8 +23,20 @@ embedding before nearest-neighbor search, so reserving a GPU for that query
 path is often unnecessary.
 
 ```text
-Offline indexing:  images/video ──> GPU SigLIP 2 image tower ──> vector index
-Online search:     text query   ──> CPU SigLIP 2 text tower  ──> search that index
++----------------------------+       +----------------------------+
+| Offline indexing           |       | Online search              |
+|                            |       |                            |
+| images/video               |       | text query                 |
+|      |                     |       |      |                     |
+|      v                     |       |      v                     |
+| GPU SigLIP 2 image tower   |       | CPU SigLIP 2 text tower    |
+|      |                     |       |      |                     |
+|      v                     |       |      v                     |
+| image embeddings           |       | text embedding             |
+|      |                     |       |      |                     |
+|      v                     |       |      v                     |
+| vector index               |<------+ nearest-neighbor search    |
++----------------------------+       +----------------------------+
 ```
 
 This server owns the second path. It lets a system keep GPU ingestion for high
