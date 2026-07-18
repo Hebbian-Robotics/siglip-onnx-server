@@ -39,6 +39,26 @@ normalization. A text vector from a different contract is not compatible with
 the existing image index. Original SigLIP and SigLIP 2 checkpoints are not
 interchangeable embedding spaces.
 
+## Why Rust and ONNX Runtime
+
+The common serving path for vision-language models carries Python, PyTorch, and
+a general-purpose GPU inference server. Those are excellent tools for model
+development and high-throughput image ingestion, but they are more machinery
+than this steady-state query path needs.
+
+ONNX Runtime executes the exported text graph with an optimized CPU backend.
+Rust owns the smaller serving layer around it: tokenization, bounded admission
+and session pooling, the HTTP contract, and strict response validation. The
+result is one predictable service process without a Python environment or the
+training framework in production. Rust does not replace the tensor runtime or
+make the model mathematics faster by itself; ONNX Runtime performs that work.
+
+The tradeoff is a stricter artifact boundary. Exported graph inputs and outputs,
+tokenizer behavior, fixed token length, model revision, and normalization must
+be proven equivalent to the GPU implementation. This design is a good fit for
+a pinned, narrow production query service; Python remains the easier choice
+while experimenting with models or changing their execution contract often.
+
 ## OpenAI-compatible usage
 
 Point the client at this server's `/v1` base URL and request the exact model ID
