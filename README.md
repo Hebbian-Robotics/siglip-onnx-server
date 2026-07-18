@@ -186,6 +186,11 @@ docker run --rm --env-file .env \
   siglip-onnx-server
 ```
 
+The same image is published publicly at
+`ghcr.io/hebbian-robotics/siglip-onnx-server`. Use `latest` for a quick local
+evaluation, and pin a source-commit tag or image digest for production. The
+checked-in [`.env.example`](.env.example) demonstrates an immutable tag.
+
 Copy [`.env.example`](.env.example) to `.env` and adjust its mounted paths.
 
 ## Production C4 deployment
