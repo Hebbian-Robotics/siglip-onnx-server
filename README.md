@@ -144,13 +144,26 @@ produces the model artifacts:
   "repository": "organization/siglip-model",
   "revision": "0123456789abcdef0123456789abcdef01234567",
   "embedding_dimension": 1152,
-  "text_max_token_length": 64
+  "text_max_token_length": 64,
+  "pad_token": "<pad>"
 }
 ```
 
 Additional manifest fields are accepted so one canonical file can be shared by
 multiple services. `revision` must be a full 40-character hexadecimal commit
 SHA; mutable tags and branches fail closed.
+
+`pad_token` is the padding literal the paired tokenizer defines. Tokenizer
+families spell it differently, so it is pinned by the manifest for the same
+reason the dimension and token length are: the artifacts decide it, not the
+code.
+
+It is optional and defaults to `SigLIP 2`'s `<pad>` so manifests written before
+the field existed keep working. That default is safe rather than merely
+convenient, because a tokenizer that does not define `<pad>` fails when it is
+loaded; an unstated pad token cannot silently pad with the wrong one. New
+manifests should declare it explicitly, and the field should become required
+once every deployed manifest does.
 
 Use an ONNX Runtime 1.24.x CPU shared library. The pinned Rust binding targets
 the ONNX Runtime 1.24 API. The graph must expose `input_ids` and

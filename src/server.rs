@@ -172,8 +172,11 @@ impl OnnxTextEmbedder {
                 config.tokenizer_path().display(),
             )
         })?;
-        let pad_token_id =
-            configure_fixed_length_tokenizer(&mut tokenizer, config.text_max_token_length())?;
+        let pad_token_id = configure_fixed_length_tokenizer(
+            &mut tokenizer,
+            config.text_max_token_length(),
+            config.pad_token(),
+        )?;
 
         let shared_prepacked_weights = PrepackedWeights::new();
         let mut sessions = Vec::with_capacity(config.session_count());
@@ -344,10 +347,13 @@ fn load_onnx_session(
         })
 }
 
-fn configure_fixed_length_tokenizer(tokenizer: &mut Tokenizer, token_length: usize) -> Result<u32> {
-    let pad_token = "<pad>";
+fn configure_fixed_length_tokenizer(
+    tokenizer: &mut Tokenizer,
+    token_length: usize,
+    pad_token: &str,
+) -> Result<u32> {
     let pad_token_id = tokenizer.token_to_id(pad_token).with_context(|| {
-        format!("SigLIP 2 tokenizer does not define required pad token {pad_token:?}")
+        format!("tokenizer does not define the manifest pad token {pad_token:?}")
     })?;
     tokenizer
         .with_truncation(Some(TruncationParams {

@@ -112,6 +112,10 @@ impl ServiceConfig {
     pub fn text_max_token_length(&self) -> usize {
         self.model_contract.text_max_token_length()
     }
+
+    pub fn pad_token(&self) -> &str {
+        self.model_contract.pad_token()
+    }
 }
 
 /// A model identity and vector shape that cannot be partially configured.
@@ -121,6 +125,7 @@ struct ModelContract {
     model_revision: ModelRevision,
     embedding_dimension: PositiveCount,
     text_max_token_length: PositiveCount,
+    pad_token: PadToken,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +134,8 @@ struct ModelManifestDocument {
     revision: String,
     embedding_dimension: usize,
     text_max_token_length: usize,
+    #[serde(default)]
+    pad_token: Option<String>,
 }
 
 impl ModelContract {
@@ -153,6 +160,7 @@ impl ModelContract {
                 "model manifest text_max_token_length",
                 &document.text_max_token_length.to_string(),
             )?,
+            pad_token: PadToken::parse(document.pad_token)?,
         })
     }
 
@@ -170,6 +178,43 @@ impl ModelContract {
 
     fn text_max_token_length(&self) -> usize {
         self.text_max_token_length.get()
+    }
+
+    fn pad_token(&self) -> &str {
+        self.pad_token.as_str()
+    }
+}
+
+/// The padding token literal the paired tokenizer defines. Tokenizer families
+/// spell this differently, so it is part of the pinned model contract for the
+/// same reason the vector dimension and token length are: a value the
+/// artifacts decide does not belong in the code.
+///
+/// The field is optional and defaults to `SigLIP 2`'s `<pad>` so manifests
+/// written before it existed keep working. That default is safe rather than
+/// merely convenient, because a tokenizer that does not define `<pad>` fails
+/// when it is loaded; an unstated pad token cannot silently pad with the wrong
+/// one. Make it required once every deployed manifest declares it.
+#[derive(Clone, Debug)]
+struct PadToken(String);
+
+impl PadToken {
+    const SIGLIP_PAD_TOKEN: &'static str = "<pad>";
+
+    fn parse(raw_value: Option<String>) -> Result<Self> {
+        let Some(raw_value) = raw_value else {
+            return Ok(Self(Self::SIGLIP_PAD_TOKEN.to_owned()));
+        };
+        let pad_token = raw_value.trim().to_owned();
+        ensure!(
+            !pad_token.is_empty(),
+            "model manifest pad_token must be non-empty when present"
+        );
+        Ok(Self(pad_token))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -349,7 +394,8 @@ mod tests {
         "revision": "0123456789abcdef0123456789abcdef01234567",
         "index_model_id": "siglip/organization/siglip-model",
         "embedding_dimension": 1152,
-        "text_max_token_length": 64
+        "text_max_token_length": 64,
+        "pad_token": "<pad>"
     }"#;
 
     #[test]
@@ -364,6 +410,41 @@ mod tests {
         );
         assert_eq!(model_contract.embedding_dimension(), 1152);
         assert_eq!(model_contract.text_max_token_length(), 64);
+        assert_eq!(model_contract.pad_token(), "<pad>");
+    }
+
+    #[test]
+    fn declared_pad_token_overrides_the_default() {
+        let manifest_with_other_pad_token = VALID_MODEL_MANIFEST.replace("\"<pad>\"", "\"[PAD]\"");
+
+        let model_contract = ModelContract::from_json(&manifest_with_other_pad_token)
+            .expect("a checkpoint may spell its pad token differently");
+
+        assert_eq!(model_contract.pad_token(), "[PAD]");
+    }
+
+    /// Manifests written before `pad_token` existed must keep working. The
+    /// default cannot mask a mismatch, because a tokenizer that does not
+    /// define `<pad>` fails when it is loaded.
+    #[test]
+    fn absent_pad_token_defaults_to_the_siglip_literal() {
+        let manifest_without_pad_token =
+            VALID_MODEL_MANIFEST.replace(",\n        \"pad_token\": \"<pad>\"", "");
+
+        let model_contract = ModelContract::from_json(&manifest_without_pad_token)
+            .expect("manifests predating the pad_token field must still load");
+
+        assert_eq!(model_contract.pad_token(), "<pad>");
+    }
+
+    #[test]
+    fn empty_pad_token_is_rejected() {
+        let manifest_with_empty_pad_token = VALID_MODEL_MANIFEST.replace("\"<pad>\"", "\"  \"");
+
+        let error = ModelContract::from_json(&manifest_with_empty_pad_token)
+            .expect_err("a blank pad token cannot name a real tokenizer entry");
+
+        assert!(error.to_string().contains("must be non-empty"));
     }
 
     #[test]
